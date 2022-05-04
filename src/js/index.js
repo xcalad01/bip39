@@ -13,6 +13,7 @@
     var showAddress = true;
     var showPubKey = true;
     var showPrivKey = true;
+    var showExisting = true;
     var showQr = false;
     var litecoinUseLtub = true;
 
@@ -23,6 +24,16 @@
     var rootKeyChangedTimeoutEvent = null;
 
     var generationProcesses = [];
+
+    var coinMap = {
+        "BTC - Bitcoin": "BTC",
+        "ETH - Ethereum": "ETH",
+        "BCH - Bitcoin Cash": "BCH",
+        "BTG - Bitcoin Gold": "BTG",
+        "DOGE - Dogecoin": "DOGE",
+        "LTC - Litecoin": "LTC",
+        "DGB - Digibyte": "DGB"
+    };
 
     var DOM = {};
     DOM.privacyScreenToggle = $(".privacy-screen-toggle");
@@ -133,6 +144,7 @@
     DOM.addressToggle = $(".address-toggle");
     DOM.publicKeyToggle = $(".public-key-toggle");
     DOM.privateKeyToggle = $(".private-key-toggle");
+    DOM.existingToggle = $(".existing-toggle");
     DOM.languages = $(".languages a");
     DOM.qrContainer = $(".qr-container");
     DOM.qrHider = DOM.qrContainer.find(".qr-hider");
@@ -184,6 +196,7 @@
         DOM.addressToggle.on("click", toggleAddresses);
         DOM.publicKeyToggle.on("click", togglePublicKeys);
         DOM.privateKeyToggle.on("click", togglePrivateKeys);
+        DOM.existingToggle.on("click", toggleExisting);
         DOM.csvTab.on("click", updateCsv);
         DOM.languages.on("click", languageChanged);
         DOM.bitcoinCashAddressType.on("change", bitcoinCashAddressTypeChange);
@@ -657,6 +670,10 @@
         $("td.privkey span").toggleClass("invisible");
     }
 
+    function toggleExisting() {
+        showExisting = !showExisting;
+        $("td.existing span").toggleClass("invisible");
+    }
     function privacyScreenToggled() {
         // private-data contains elements added to DOM at runtime
         // so catch all by adding visual privacy class to the root of the DOM
@@ -1204,6 +1221,13 @@
         return (bip141TabSelected() && DOM.bip141semantics.val() == "p2wsh-p2sh");
     }
 
+    function httpRequest(address, reqType) {
+      const req = new XMLHttpRequest();
+      req.open(reqType, address, false);
+      req.send();
+      return req;
+    }
+
     function TableRow(index, isLast) {
 
         var self = this;
@@ -1525,7 +1549,25 @@
                     pubkey = elaAddress.publicKey;
                 }
 
-                addAddressToList(indexText, address, pubkey, privkey);
+                var exists = "";
+                if (networks[DOM.network.val()].name in coinMap) {
+                    const url="http://127.0.0.1:8001/check_address?token=" + coinMap[networks[DOM.network.val()].name] + "&address=" + address;
+                    var req = httpRequest(url, "GET");  // In this example you don't want to GET the full page contents
+                    if (req.status == 200) {
+                        if (JSON.parse(req.response)["txs"] > 0) {
+                            exists = "YES"
+                        }
+                        else {
+                            exists = "NO"
+                        }
+                    } else {
+                         exists = "dont know"
+                    }
+                } else {
+                    exists = "dont know"
+                }
+
+                addAddressToList(indexText, address, pubkey, privkey, exists);
                 if (isLast) {
                     hidePending();
                     updateCsv();
@@ -1596,18 +1638,20 @@
         DOM.bip44accountXpub.val("");
     }
 
-    function addAddressToList(indexText, address, pubkey, privkey) {
+    function addAddressToList(indexText, address, pubkey, privkey, exists) {
         var row = $(addressRowTemplate.html());
         // Elements
         var indexCell = row.find(".index span");
         var addressCell = row.find(".address span");
         var pubkeyCell = row.find(".pubkey span");
         var privkeyCell = row.find(".privkey span");
+        var existingCell = row.find(".existing span");
         // Content
         indexCell.text(indexText);
         addressCell.text(address);
         pubkeyCell.text(pubkey);
         privkeyCell.text(privkey);
+        existingCell.text(exists);
         // Visibility
         if (!showIndex) {
             indexCell.addClass("invisible");
@@ -1620,6 +1664,9 @@
         }
         if (!showPrivKey) {
             privkeyCell.addClass("invisible");
+        }
+        if (!showExisting) {
+            existingCell.addClass("invisible");
         }
         DOM.addresses.append(row);
         var rowShowQrEls = row.find("[data-show-qr]");
@@ -2258,7 +2305,7 @@
     }
 
     function updateCsv() {
-        var tableCsv = "path,address,public key,private key\n";
+        var tableCsv = "path,address,public key,private key,existing\n";
         var rows = DOM.addresses.find("tr");
         for (var i=0; i<rows.length; i++) {
             var row = $(rows[i]);
